@@ -135,10 +135,15 @@ pub async fn setup_and_run(
             fmds_address = fmds_addr,
             "Using FmdsUpdater::External FMDS service"
         );
-        let fmds_client = crate::fmds_client::FmdsGrpcClient::connect(fmds_addr)
-            .await
-            .wrap_err("Failed to connect to external FMDS service")?;
-        FmdsUpdater::External(fmds_client)
+        match crate::fmds_client::FmdsGrpcClient::connect(fmds_addr).await {
+            Ok(fmds_client) => FmdsUpdater::External(fmds_client),
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to connect to external FMDS service: {e:#}, falling back to embedded"
+                );
+                FmdsUpdater::Embedded(instance_metadata_state.clone())
+            }
+        }
     } else {
         if options.enable_metadata_service {
             crate::metadata_service::spawn_metadata_service(
