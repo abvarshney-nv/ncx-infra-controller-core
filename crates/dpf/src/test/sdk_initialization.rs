@@ -87,8 +87,6 @@ impl BfbRepository for InitializationMock {
             file_name: None,
             phase: BfbStatusPhase::Ready,
             versions: None,
-            conditions: None,
-            observed_generation: None,
         });
         self.bfbs
             .insert(resource_key(&bfb_with_status), bfb_with_status.clone());

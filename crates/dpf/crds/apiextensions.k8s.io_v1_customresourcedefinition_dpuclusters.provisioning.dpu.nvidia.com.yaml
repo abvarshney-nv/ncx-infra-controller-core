@@ -34,13 +34,9 @@ spec:
       name: MaxNodes
       type: integer
     - description: Kubernetes control-plane version
-      jsonPath: .status.version
+      jsonPath: .spec.version
       name: Version
       type: string
-    - description: number of assigned DPUs
-      jsonPath: .status.nodesCount
-      name: NodesCount
-      type: integer
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -188,10 +184,6 @@ spec:
                   - type
                   type: object
                 type: array
-              nodesCount:
-                description: NodesCount is the number of DPUs assigned to the cluster
-                minimum: 0
-                type: integer
               phase:
                 allOf:
                 - enum:
