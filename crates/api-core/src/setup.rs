@@ -846,8 +846,7 @@ async fn initialize_dpf_sdk(
     let deployment_type_labels = build_deployment_type_labels(carbide_config);
 
     // Builds the SDK init config for one DPUDeployment. BF4 uses a single
-    // `BlueFieldSoftware` source (the CR itself carries the PSID→PLDM mapping);
-    // config validation guarantees exactly one PSID entry.
+    // `BlueFieldSoftware` source whose CR carries the complete PSID→PLDM mapping.
     let make_init_config =
         |deployment: &crate::cfg::file::DpfDeploymentConfig,
          deployment_type: DpuDeploymentType,
@@ -923,8 +922,7 @@ async fn initialize_dpf_sdk(
     ];
 
     if let Some(bf4) = &carbide_config.dpf.deployments.bf4_generic {
-        // Validation guarantees `bluefield_software` is set with exactly one PSID
-        // entry for a BF4 deployment.
+        // Validation guarantees `bluefield_software` has at least one PSID entry.
         let bfs = bf4.bluefield_software.as_ref().ok_or_else(|| {
             eyre::eyre!("bf4_generic DPF deployment is missing bluefield_software")
         })?;
