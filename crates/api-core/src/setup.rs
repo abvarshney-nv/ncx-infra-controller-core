@@ -928,13 +928,9 @@ async fn initialize_dpf_sdk(
         let bfs = bf4.bluefield_software.as_ref().ok_or_else(|| {
             eyre::eyre!("bf4_generic DPF deployment is missing bluefield_software")
         })?;
-        let pldm_url =
-            bfs.pldm_fw_bundle.values().next().ok_or_else(|| {
-                eyre::eyre!("bf4_generic DPF deployment has an empty pldm_fw_bundle")
-            })?;
         let params = carbide_dpf::BlueFieldSoftwareParams {
             os_iso: bfs.os_iso.clone(),
-            pldm_fw_bundle: Some(pldm_url.clone()),
+            pldm_fw_bundle: Some(bfs.pldm_fw_bundle.clone()),
         };
         init_configs.push((
             "bf4_generic",
@@ -947,13 +943,9 @@ async fn initialize_dpf_sdk(
             .bluefield_software
             .as_ref()
             .ok_or_else(|| eyre::eyre!("bf4_astra DPF deployment is missing bluefield_software"))?;
-        let pldm_url =
-            bfs.pldm_fw_bundle.values().next().ok_or_else(|| {
-                eyre::eyre!("bf4_astra DPF deployment has an empty pldm_fw_bundle")
-            })?;
         let params = carbide_dpf::BlueFieldSoftwareParams {
             os_iso: bfs.os_iso.clone(),
-            pldm_fw_bundle: Some(pldm_url.clone()),
+            pldm_fw_bundle: Some(bfs.pldm_fw_bundle.clone()),
         };
         init_configs.push((
             "bf4_astra",
