@@ -94,7 +94,7 @@ fn mock_client(ca: Arc<TestCa>, behavior: Behavior, recorded: Arc<Mutex<Recorded
         async move {
             let (parts, body) = request.into_parts();
             let mut status_code = StatusCode::OK;
-            let response = match parts.method {
+            let mut response = match parts.method {
                 Method::POST => {
                     let body = body.collect().await.unwrap().to_bytes();
                     let mut resource: CertificateRequest = serde_json::from_slice(&body).unwrap();
@@ -161,6 +161,10 @@ fn mock_client(ca: Arc<TestCa>, behavior: Behavior, recorded: Arc<Mutex<Recorded
                 }
                 method => panic!("unexpected Kubernetes method {method}"),
             };
+            // cert-manager responses may omit the optional false isCA field.
+            if let Some(spec) = response.get_mut("spec").and_then(Value::as_object_mut) {
+                assert_eq!(spec.remove("isCA"), Some(Value::Bool(false)));
+            }
             Ok::<_, std::convert::Infallible>(
                 Response::builder()
                     .status(status_code)
@@ -226,6 +230,10 @@ async fn issuance_and_cleanup_contract() {
         assert_eq!(result.is_ok(), succeeds, "{name}: {result:?}");
         let recorded = recorded.lock().unwrap();
         let created = recorded.created.as_ref().unwrap();
+        assert!(
+            !created.spec.is_ca,
+            "{name}: requests must be leaf certificates"
+        );
         assert_eq!(
             created.metadata.labels.as_ref().unwrap()[MACHINE_ID_LABEL],
             MACHINE_ID

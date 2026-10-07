@@ -24,7 +24,7 @@ pub(crate) struct RequestSpec {
     pub(crate) request: ByteString,
     pub(crate) issuer_ref: IssuerRef,
     pub(crate) duration: String,
-    #[serde(rename = "isCA")]
+    #[serde(default, rename = "isCA")]
     pub(crate) is_ca: bool,
     pub(crate) usages: Vec<String>,
 }
