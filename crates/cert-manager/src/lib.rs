@@ -48,6 +48,7 @@ pub struct Config {
     #[serde(default)]
     pub issuer_kind: IssuerKind,
     /// Issuance deadline in seconds, including request creation; defaults to 120, range 1..=600.
+    /// Cleanup has a separate wait bounded by the same duration.
     #[serde(default = "default_request_timeout_secs")]
     pub request_timeout_secs: u64,
     /// Maximum certificate lifetime; defaults to 720h, matching the bootstrap Vault role.
@@ -258,8 +259,20 @@ impl CertManagerCertificateProvider {
         // The name is known before creation. Even an interrupted POST may have
         // created the CSR, so attempt deletion after every creation outcome.
         // DELETE acknowledges the deletion request; do not wait for finalizers.
-        if let Err(error) = self.delete_request(&name, uid).await {
-            tracing::warn!(request_name = %name, %error, "Could not delete CertificateRequest");
+        // Cleanup must still be polled after the issuance deadline expires.
+        match tokio::time::timeout(
+            Duration::from_secs(self.config.request_timeout_secs),
+            self.delete_request(&name, uid),
+        )
+        .await
+        {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                tracing::warn!(request_name = %name, %error, "Could not delete CertificateRequest");
+            }
+            Err(_) => {
+                tracing::warn!(request_name = %name, "Timed out deleting CertificateRequest");
+            }
         }
         result
     }

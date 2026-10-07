@@ -118,12 +118,12 @@ impl CertificateRequestMaterial {
             .certificate
             .as_ref()
             .ok_or_else(|| Error::Certificate("Ready request has no certificate".into()))?;
-        let issuing_ca = status
-            .ca
-            .as_ref()
-            .ok_or_else(|| Error::Certificate("Ready request has no issuing CA".into()))?;
+        let issuing_ca = status.ca.as_ref();
         let chain = parse_certs(&public_key.0)?;
-        let ca_chain = parse_certs(&issuing_ca.0)?;
+        let ca_chain = issuing_ca
+            .map(|ca| parse_certs(&ca.0))
+            .transpose()?
+            .unwrap_or_default();
         let leaf = &chain[0];
         let (rest, cert) = X509Certificate::from_der(leaf.as_ref())
             .map_err(|error| Error::Certificate(error.to_string()))?;
@@ -209,7 +209,7 @@ impl CertificateRequestMaterial {
         Ok(Certificate {
             public_key: public_key.0.clone(),
             private_key: self.key.serialize_pem().into_bytes(),
-            issuing_ca: issuing_ca.0.clone(),
+            issuing_ca: issuing_ca.map_or_else(Vec::new, |ca| ca.0.clone()),
         })
     }
 }

@@ -3820,6 +3820,7 @@ dependencies = [
  "async-trait",
  "carbide-authn",
  "carbide-secrets",
+ "carbide-test-support",
  "eyre",
  "http",
  "http-body-util",

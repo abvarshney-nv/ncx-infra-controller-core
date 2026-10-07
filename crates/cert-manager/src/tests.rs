@@ -76,6 +76,8 @@ enum Behavior {
     Denied,
     Pending,
     DeleteFailure,
+    DeleteStall,
+    PendingDeleteStall,
     CreateFailure,
 }
 
@@ -111,7 +113,7 @@ fn mock_client(ca: Arc<TestCa>, behavior: Behavior, recorded: Arc<Mutex<Recorded
                 Method::GET => {
                     let mut resource = recorded.lock().unwrap().created.clone().unwrap();
                     resource.status = Some(match behavior {
-                        Behavior::Issued | Behavior::DeleteFailure => {
+                        Behavior::Issued | Behavior::DeleteFailure | Behavior::DeleteStall => {
                             let seconds = resource
                                 .spec
                                 .duration
@@ -124,7 +126,9 @@ fn mock_client(ca: Arc<TestCa>, behavior: Behavior, recorded: Arc<Mutex<Recorded
                             conditions: vec![condition("Denied", "True", "Policy")],
                             ..Default::default()
                         },
-                        Behavior::Pending => RequestStatus::default(),
+                        Behavior::Pending | Behavior::PendingDeleteStall => {
+                            RequestStatus::default()
+                        }
                         Behavior::CreateFailure => panic!("failed creation must not poll"),
                     });
                     serde_json::to_value(resource).unwrap()
@@ -141,6 +145,12 @@ fn mock_client(ca: Arc<TestCa>, behavior: Behavior, recorded: Arc<Mutex<Recorded
                         assert!(body.get("preconditions").is_none());
                     } else {
                         assert_eq!(body["preconditions"]["uid"], "test-uid");
+                    }
+                    if matches!(
+                        behavior,
+                        Behavior::DeleteStall | Behavior::PendingDeleteStall
+                    ) {
+                        std::future::pending::<()>().await;
                     }
                     if matches!(behavior, Behavior::DeleteFailure) {
                         status_code = StatusCode::FORBIDDEN;
@@ -182,6 +192,16 @@ async fn issuance_and_cleanup_contract() {
             Behavior::DeleteFailure,
             true,
         ),
+        (
+            "stalled cleanup preserves issued credential",
+            Behavior::DeleteStall,
+            true,
+        ),
+        (
+            "issuance timeout still attempts bounded cleanup",
+            Behavior::PendingDeleteStall,
+            false,
+        ),
     ] {
         let recorded = Arc::new(Mutex::new(Recorded::default()));
         let provider = CertManagerCertificateProvider::new(
@@ -197,7 +217,12 @@ async fn issuance_and_cleanup_contract() {
             trust.path().into(),
         )
         .unwrap();
-        let result = provider.get_certificate(MACHINE_ID, None, None).await;
+        let result = tokio::time::timeout(
+            Duration::from_secs(3),
+            provider.get_certificate(MACHINE_ID, None, None),
+        )
+        .await
+        .unwrap_or_else(|_| panic!("{name}: issuance and cleanup must both be bounded"));
         assert_eq!(result.is_ok(), succeeds, "{name}: {result:?}");
         let recorded = recorded.lock().unwrap();
         let created = recorded.created.as_ref().unwrap();
@@ -238,6 +263,39 @@ async fn issuance_and_cleanup_contract() {
             assert_eq!(certificate.issuing_ca, ca.pem.as_bytes());
         }
     }
+}
+
+#[test]
+fn optional_issuer_chain_contract() {
+    use carbide_test_support::Outcome::{Fails, Yields};
+    use carbide_test_support::scenarios;
+
+    let ca = TestCa::new();
+    let other_ca = TestCa::new();
+    let request = CertificateRequestMaterial::new(
+        &spiffe_identity(),
+        MACHINE_ID,
+        None,
+        None,
+        default_max_ttl(),
+    )
+    .unwrap();
+    let mut status = ca.sign(&request.csr_pem().unwrap(), request.lifetime);
+    status.ca = None;
+    let validate = |trust: &[u8]| {
+        request
+            .validate(&status, trust)
+            .map(|certificate| certificate.issuing_ca)
+            .map_err(drop)
+    };
+    scenarios!(validate:
+        "missing issuer chain accepts a directly trusted leaf" {
+            ca.pem.as_bytes() => Yields(Vec::<u8>::new()),
+        }
+        "missing issuer chain still requires configured trust" {
+            other_ca.pem.as_bytes() => Fails,
+        }
+    );
 }
 
 #[test]

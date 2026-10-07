@@ -1693,7 +1693,7 @@ These fields live under `[certificates.cert_manager]`.
 | `namespace` | `String` | **required, non-empty** | Namespace for CertificateRequests. The API service account needs `create`, `get`, and `delete` on `certificaterequests` in this namespace. |
 | `issuer_name` | `String` | **required, non-empty** | Existing issuer in `cert-manager.io`, chaining to the same site CA trusted by the API, Scout, and DPU agents. |
 | `issuer_kind` | `IssuerKind` | `ClusterIssuer` | Accepts `ClusterIssuer` or `Issuer`; an `Issuer` must be in `namespace`. |
-| `request_timeout_secs` | `u64` | `120` | Issuance deadline including Kubernetes creation, in seconds; accepts `1` through `600`. |
+| `request_timeout_secs` | `u64` | `120` | Issuance deadline including Kubernetes creation, in seconds; accepts `1` through `600`. Cleanup has a separate wait bounded by the same duration. |
 | `max_ttl` | `Duration` | `720h` | Positive whole-second duration in human-readable format (for example `720h`). Caps machine and explicit UFM lifetimes; set it to the existing Vault PKI role's maximum when migrating. |
 
 The API uses Kubernetes client configuration (in-cluster service account or
@@ -1722,10 +1722,13 @@ The API
 validates the returned key, SPIFFE identity, usages, lifetime, and trust chain
 against `[tls] root_cafile_path`, then returns the existing certificate/key/CA
 response format. The signing issuer must preserve the requested machine usages
-and provide its CA bundle.
+and provide any intermediate certificates needed to verify the leaf against the
+configured trust bundle. The issuer CA field is optional; when absent, the
+returned issuing-CA bytes are empty and trust verification is still required.
 
 After success, failure, or timeout, the API submits a deletion request and waits
-only for Kubernetes' acknowledgement, without waiting for finalizers. Failure
+only for Kubernetes' acknowledgement, without waiting for finalizers. This wait
+has a separate `request_timeout_secs` deadline. Failure or cleanup timeout
 logs a warning without discarding a successfully issued certificate.
 Cancellation or process death may leave a public CSR for
 operator cleanup. Requests have UUID names and the `nico.nvidia.com/machine-id`
