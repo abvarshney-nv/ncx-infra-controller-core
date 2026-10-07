@@ -1716,8 +1716,6 @@ Machine lifetimes retain the randomized Vault default of 432 through 719 hours,
 capped by `max_ttl`. UFM requests include their existing DNS SANs and an explicit
 365-day lifetime, also capped by `max_ttl`. Explicit TTLs must be positive
 whole-second durations; DNS SANs are comma-separated, with whitespace trimmed.
-UFM's manual installation handoff stages the private key in the API pod with
-mode `0600`, including on repeat issuance. Copy it as the file owner or root.
 The API
 validates the returned key, SPIFFE identity, usages, lifetime, and trust chain
 against `[tls] root_cafile_path`, then returns the existing certificate/key/CA

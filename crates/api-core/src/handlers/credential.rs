@@ -15,11 +15,9 @@
  * limitations under the License.
  */
 
-use std::fs::{File, OpenOptions, Permissions};
+use std::fs::File;
 use std::io::Write;
 use std::net::{IpAddr, SocketAddr};
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-use std::path::Path;
 
 use ::rpc::errors::RpcDataConversionError;
 use ::rpc::forge::{self as rpc};
@@ -818,13 +816,16 @@ async fn write_ufm_certs(api: &Api, fabric: String) -> Result<(), CarbideError> 
         })?;
 
     cert_filename = format!("{CERT_PATH}/{fabric}-ufm-server.key");
-    write_ufm_private_key(Path::new(&cert_filename), &certificate.private_key).map_err(
-        |error| {
+    cert_file = File::create(cert_filename.clone()).map_err(|e| {
+        CarbideError::internal(format!("could not create: {cert_filename} err: {e:?}"))
+    })?;
+    cert_file
+        .write_all(certificate.private_key.as_slice())
+        .map_err(|e| {
             CarbideError::internal(format!(
-                "could not write UFM private key to {cert_filename}: {error}"
+                "failed to write certificate to: {cert_filename} error: {e:?}"
             ))
-        },
-    )?;
+        })?;
 
     cert_filename = format!("{CERT_PATH}/{fabric}-ufm-server.crt");
     cert_file = File::create(cert_filename.clone()).map_err(|e| {
@@ -839,19 +840,6 @@ async fn write_ufm_certs(api: &Api, fabric: String) -> Result<(), CarbideError> 
         })?;
 
     Ok(())
-}
-
-fn write_ufm_private_key(path: &Path, private_key: &[u8]) -> std::io::Result<()> {
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(path)?;
-    // The creation mode does not affect existing files. Restrict access before
-    // writing replacement key material during repeat issuance.
-    file.set_permissions(Permissions::from_mode(0o600))?;
-    file.write_all(private_key)
 }
 
 pub(crate) async fn renew_machine_certificate(
@@ -931,37 +919,4 @@ pub(crate) async fn set_container_registry_credential(
         .await
         .map_err(|e| CarbideError::internal(format!("set registry credential: {e:?}")))?;
     Ok(Response::new(()))
-}
-
-#[cfg(test)]
-mod tests {
-    use carbide_test_support::value_scenarios;
-
-    use super::*;
-
-    #[test]
-    fn ufm_private_key_is_owner_only() {
-        let stage_key = |existing_mode: Option<u32>| {
-            let directory = tempfile::tempdir().unwrap();
-            let path = directory.path().join("ufm-server.key");
-            if let Some(mode) = existing_mode {
-                std::fs::write(&path, b"previous-key-material").unwrap();
-                std::fs::set_permissions(&path, Permissions::from_mode(mode)).unwrap();
-            }
-            let private_key = b"test-key";
-            write_ufm_private_key(&path, private_key).unwrap();
-            (
-                std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
-                std::fs::read(&path).unwrap() == private_key,
-            )
-        };
-        value_scenarios!(stage_key:
-            "new key is created with restricted access" {
-                None => (0o600, true),
-            }
-            "repeat issuance restricts an existing readable key and replaces its contents" {
-                Some(0o644) => (0o600, true),
-            }
-        );
-    }
 }
