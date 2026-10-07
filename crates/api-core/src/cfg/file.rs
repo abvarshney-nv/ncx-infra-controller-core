@@ -6462,6 +6462,23 @@ path = "credentials.yaml"
                 "/etc/forge/carbide-api/site/admin_root_cert_pem",
             ),
             ("{{ .Values.auth.permissiveMode | default false }}", "false"),
+            ("{{ .Values.global.certificate.useCertManager }}", "false"),
+            (
+                r#"{{ include "nico-api.namespace" . | quote }}"#,
+                r#""nico-system""#,
+            ),
+            (
+                "{{ .Values.machineCertificates.issuerRef.name | quote }}",
+                r#""site-issuer""#,
+            ),
+            (
+                "{{ .Values.machineCertificates.issuerRef.kind | quote }}",
+                r#""ClusterIssuer""#,
+            ),
+            (
+                "{{ .Values.machineCertificates.requestTimeoutSecs }}",
+                "120",
+            ),
             ("{{ .Values.global.spiffe.trustDomain }}", "example.test"),
             (
                 r#"{{ .Values.auth.namespace | default (include "nico-api.namespace" .) }}"#,
