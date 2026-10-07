@@ -2,7 +2,7 @@ suite: certificate dnsNames and uris configurability
 templates:
   - certificate.yaml
 release:
-  namespace: forge-system
+  namespace: nico-system
 tests:
   - it: generates dnsNames and uris from serviceName and namespace by default
     set:
@@ -17,20 +17,20 @@ tests:
       - equal:
           path: spec.dnsNames
           value:
-            - nico-api.forge-system.svc.cluster.local
-            - nico-api.forge-system
+            - nico-api.nico-system.svc.cluster.local
+            - nico-api.nico-system
       - equal:
           path: spec.uris
           value:
-            - spiffe://nico.local/forge-system/sa/nico-api
+            - spiffe://nico.local/nico-system/sa/nico-api
 
   - it: includes carbide-api.forge in extraDnsNames by default for backwards compatibility
     asserts:
       - equal:
           path: spec.dnsNames
           value:
-            - nico-api.forge-system.svc.cluster.local
-            - nico-api.forge-system
+            - nico-api.nico-system.svc.cluster.local
+            - nico-api.nico-system
             - carbide-api.forge
 
   - it: appends extraDnsNames and extraUris to the generated lists
@@ -39,19 +39,19 @@ tests:
         extraDnsNames:
           - nico-api.example.com
         extraUris:
-          - spiffe://nico.local/forge-system/sa/extra
+          - spiffe://nico.local/nico-system/sa/extra
     asserts:
       - equal:
           path: spec.dnsNames
           value:
-            - nico-api.forge-system.svc.cluster.local
-            - nico-api.forge-system
+            - nico-api.nico-system.svc.cluster.local
+            - nico-api.nico-system
             - nico-api.example.com
       - equal:
           path: spec.uris
           value:
-            - spiffe://nico.local/forge-system/sa/nico-api
-            - spiffe://nico.local/forge-system/sa/extra
+            - spiffe://nico.local/nico-system/sa/nico-api
+            - spiffe://nico.local/nico-system/sa/extra
 
   - it: fully overrides the generated dnsNames when certificate.dnsNames is set
     set:
@@ -70,26 +70,26 @@ tests:
       - equal:
           path: spec.uris
           value:
-            - spiffe://nico.local/forge-system/sa/nico-api
+            - spiffe://nico.local/nico-system/sa/nico-api
 
   - it: fully overrides the generated uris when certificate.uris is set
     set:
       certificate:
         uris:
-          - spiffe://custom.local/forge-system/sa/nico-api
+          - spiffe://custom.local/nico-system/sa/nico-api
       # Clear extraDnsNames to test uris override in isolation
       certificate.extraDnsNames: []
     asserts:
       - equal:
           path: spec.uris
           value:
-            - spiffe://custom.local/forge-system/sa/nico-api
+            - spiffe://custom.local/nico-system/sa/nico-api
       # dnsNames still generated.
       - equal:
           path: spec.dnsNames
           value:
-            - nico-api.forge-system.svc.cluster.local
-            - nico-api.forge-system
+            - nico-api.nico-system.svc.cluster.local
+            - nico-api.nico-system
 
   - it: ignores extraDnsNames once dnsNames override is set
     set:
@@ -114,7 +114,7 @@ tests:
       - equal:
           path: spec.dnsNames
           value:
-            - nico-api.forge-system.svc.cluster.local
+            - nico-api.nico-system.svc.cluster.local
 
   - it: also accepts the string "false" to omit the short dnsName
     set:
@@ -126,7 +126,7 @@ tests:
       - equal:
           path: spec.dnsNames
           value:
-            - nico-api.forge-system.svc.cluster.local
+            - nico-api.nico-system.svc.cluster.local
 
   - it: nameOverride flips the certificate resource name, dnsNames, and SPIFFE URI to the override
     set:
@@ -140,12 +140,12 @@ tests:
       - equal:
           path: spec.dnsNames
           value:
-            - carbide-api.forge-system.svc.cluster.local
-            - carbide-api.forge-system
+            - carbide-api.nico-system.svc.cluster.local
+            - carbide-api.nico-system
       - equal:
           path: spec.uris
           value:
-            - spiffe://nico.local/forge-system/sa/carbide-api
+            - spiffe://nico.local/nico-system/sa/carbide-api
 
   - it: spiffeServiceName overrides only the SPIFFE /sa/ name; dnsNames unchanged
     set:
@@ -157,29 +157,29 @@ tests:
       - equal:
           path: spec.uris
           value:
-            - spiffe://nico.local/forge-system/sa/elektra-site-agent
+            - spiffe://nico.local/nico-system/sa/elektra-site-agent
       - equal:
           path: spec.dnsNames
           value:
-            - nico-api.forge-system.svc.cluster.local
-            - nico-api.forge-system
+            - nico-api.nico-system.svc.cluster.local
+            - nico-api.nico-system
 
   - it: identityNamespace overrides the namespace in dnsNames, commonName, and URI
     set:
       certificate:
-        identityNamespace: identity-system
+        identityNamespace: forge-system
         # Clear extraDnsNames to test identityNamespace behavior in isolation
         extraDnsNames: []
     asserts:
       - equal:
           path: spec.commonName
-          value: nico-api.identity-system.svc.cluster.local
+          value: nico-api.forge-system.svc.cluster.local
       - equal:
           path: spec.dnsNames
           value:
-            - nico-api.identity-system.svc.cluster.local
-            - nico-api.identity-system
+            - nico-api.forge-system.svc.cluster.local
+            - nico-api.forge-system
       - equal:
           path: spec.uris
           value:
-            - spiffe://nico.local/identity-system/sa/nico-api
+            - spiffe://nico.local/forge-system/sa/nico-api

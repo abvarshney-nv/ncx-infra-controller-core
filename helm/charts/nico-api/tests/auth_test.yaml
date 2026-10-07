@@ -2,7 +2,7 @@ suite: API authorization config (default nico, override carbide/forge)
 templates:
   - configmap.yaml
 release:
-  namespace: forge-system
+  namespace: nico-system
 tests:
   - it: defaults trust domain, SPIFFE base paths, and casbin principals to nico
     documentIndex: 0
@@ -12,10 +12,10 @@ tests:
           pattern: 'spiffe_trust_domain = "nico\.local"'
       - matchRegex:
           path: data["nico-api-config.toml"]
-          pattern: '"/forge-system/sa/"'
+          pattern: '"/nico-system/sa/"'
       - matchRegex:
           path: data["nico-api-config.toml"]
-          pattern: 'spiffe_machine_base_path = "/forge-system/machine/"'
+          pattern: 'spiffe_machine_base_path = "/nico-system/machine/"'
       - matchRegex:
           path: data["casbin-policy.csv"]
           pattern: 'g, spiffe-service-id/nico-dhcp, nico-dhcp'

@@ -1707,7 +1707,7 @@ The API uses Kubernetes client configuration (in-cluster service account or
 kubeconfig). Its issuer must be ready and its CertificateRequests must be
 approved by the cluster's cert-manager approval policy. The Helm chart defaults
 `global.certificate.useCertManager` to `false`; enabling it renders these settings
-using the API namespace (default `forge-system`, overridden by
+using the API namespace (defaulting to the Helm release namespace, overridden by
 `nico-api.namespaceOverride`), with `nico-api.machineCertificates.issuerRef` defaulting
 to `ClusterIssuer/site-issuer`. These chart values can be overridden. A custom
 `configFiles.nicoApiConfig` replaces the chart's generated configuration; the
@@ -1715,6 +1715,9 @@ site configuration is merged over the global configuration, followed by the
 binary's environment overrides.
 The API chart grants the request permissions regardless of the Helm switch, so
 enabling the provider in the site configuration requires no Helm flag change.
+If site-config requests use a different namespace than the API, grant the API
+service account request permissions there, or override
+`certificates.cert_manager.namespace` to match the API namespace.
 
 For each machine or UFM certificate, the API generates a P-256 key in memory and
 submits only a CSR. The SPIFFE URI is always included using

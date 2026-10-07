@@ -1,13 +1,15 @@
 suite: Machine certificate request permissions
 templates:
   - rbac.yaml
+release:
+  namespace: release-site
 tests:
   - it: permits site-config-only enablement with the default namespace
     documentIndex: 0
     asserts:
       - equal:
           path: metadata.namespace
-          value: forge-system
+          value: release-site
       - equal:
           path: rules
           value:
