@@ -2,7 +2,7 @@ suite: BMC proxy routing config
 templates:
   - configmap.yaml
 release:
-  namespace: nico-system
+  namespace: forge-system
 tests:
   - it: omits the section by default so all BMC traffic stays direct
     documentIndex: 0
@@ -22,7 +22,7 @@ tests:
           pattern: '\[bmc_proxy\]'
       - matchRegex:
           path: data["nico-api-config.toml"]
-          pattern: 'address = "nico-bmc-proxy\.nico-system\.svc\.cluster\.local:1079"'
+          pattern: 'address = "nico-bmc-proxy\.forge-system\.svc\.cluster\.local:1079"'
       - matchRegex:
           path: data["nico-api-config.toml"]
           pattern: 'client_cert = "/var/run/secrets/spiffe\.io/tls\.crt"'

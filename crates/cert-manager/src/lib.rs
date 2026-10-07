@@ -36,13 +36,16 @@ pub enum IssuerKind {
     ClusterIssuer,
 }
 
-/// Settings for the certificate signer; the namespace and issuer name are required.
+/// Settings for the certificate signer, defaulting to the site issuer in forge-system.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
-    /// Namespace in which NICo creates CertificateRequests; must match its request RBAC.
+    /// Namespace in which NICo creates CertificateRequests; defaults to forge-system.
+    /// Must match its request RBAC.
+    #[serde(default = "default_namespace")]
     pub namespace: String,
-    /// Existing issuer backed by the site's compatible signing CA.
+    /// Existing issuer backed by the site's compatible signing CA; defaults to site-issuer.
+    #[serde(default = "default_issuer_name")]
     pub issuer_name: String,
     /// Issuer scope, defaulting to ClusterIssuer.
     #[serde(default)]
@@ -57,12 +60,32 @@ pub struct Config {
     pub max_ttl: Duration,
 }
 
+fn default_namespace() -> String {
+    "forge-system".into()
+}
+
+fn default_issuer_name() -> String {
+    "site-issuer".into()
+}
+
 fn default_request_timeout_secs() -> u64 {
     120
 }
 
 fn default_max_ttl() -> Duration {
     Duration::from_secs(720 * 3600)
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            namespace: default_namespace(),
+            issuer_name: default_issuer_name(),
+            issuer_kind: IssuerKind::default(),
+            request_timeout_secs: default_request_timeout_secs(),
+            max_ttl: default_max_ttl(),
+        }
+    }
 }
 
 impl Config {

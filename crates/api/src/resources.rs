@@ -97,7 +97,7 @@ pub(crate) async fn setup_resources(
             })?;
             Arc::new(
                 cert_manager::CertManagerCertificateProvider::from_config(
-                    config.clone(),
+                    config,
                     spiffe,
                     tls.root_cafile_path.clone().into(),
                 )

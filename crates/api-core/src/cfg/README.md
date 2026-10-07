@@ -1679,8 +1679,8 @@ Each entry in `providers` is tagged by `type`. Unknown fields are rejected.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `use_cert_manager` | `bool` | `false` | Issue and renew Scout, DPU, and UFM certificates using cert-manager. Requires `cert_manager` and `[tls] root_cafile_path`. Disabled settings are ignored. |
-| `cert_manager` | `Option<cert_manager::Config>` | — | Kubernetes signer settings, required when `use_cert_manager = true`; see [machine cert-manager settings](#machine-cert-manager-settings). |
+| `use_cert_manager` | `bool` | `false` | Issue and renew Scout, DPU, and UFM certificates using cert-manager. Requires `[tls] root_cafile_path`. Disabled settings are ignored. |
+| `cert_manager` | `Option<cert_manager::Config>` | — | Optional Kubernetes signer overrides. When omitted, the [machine cert-manager defaults](#machine-cert-manager-settings) apply. |
 | `backend` | `CertBackendKind` | `shared_vault` | Vault backend when `use_cert_manager = false`: `shared_vault` reuses the credential store's Vault client (one client, one token lease), `dedicated_vault` uses a separately-configured Vault. Ignored when cert-manager is enabled. |
 | `dedicated_vault` | `Option<DedicatedVaultSettings>` | — | Connection settings for a dedicated certificate Vault (see [DedicatedVaultSettings](#dedicatedvaultsettings)). Required when `backend = "dedicated_vault"` and `use_cert_manager = false`, ignored otherwise. |
 
@@ -1688,10 +1688,17 @@ Each entry in `providers` is tagged by `type`. Unknown fields are rejected.
 
 These fields live under `[certificates.cert_manager]`.
 
+To enable issuance with the defaults, set only:
+
+```toml
+[certificates]
+use_cert_manager = true
+```
+
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `namespace` | `String` | **required, non-empty** | Namespace for CertificateRequests. The API service account needs `create`, `get`, and `delete` on `certificaterequests` in this namespace. |
-| `issuer_name` | `String` | **required, non-empty** | Existing issuer in `cert-manager.io`, chaining to the same site CA trusted by the API, Scout, and DPU agents. |
+| `namespace` | `String` | `forge-system` | Non-empty namespace for CertificateRequests. The API service account needs `create`, `get`, and `delete` on `certificaterequests` in this namespace. Helm sets it to the deployed API namespace. |
+| `issuer_name` | `String` | `site-issuer` | Non-empty name of an existing issuer in `cert-manager.io`, chaining to the same site CA trusted by the API, Scout, and DPU agents. |
 | `issuer_kind` | `IssuerKind` | `ClusterIssuer` | Accepts `ClusterIssuer` or `Issuer`; an `Issuer` must be in `namespace`. |
 | `request_timeout_secs` | `u64` | `120` | Issuance deadline including Kubernetes creation, in seconds; accepts `1` through `600`. Cleanup has a separate wait bounded by the same duration. |
 | `max_ttl` | `Duration` | `720h` | Positive whole-second duration in human-readable format (for example `720h`). Caps machine and explicit UFM lifetimes; set it to the existing Vault PKI role's maximum when migrating. |
@@ -1700,13 +1707,14 @@ The API uses Kubernetes client configuration (in-cluster service account or
 kubeconfig). Its issuer must be ready and its CertificateRequests must be
 approved by the cluster's cert-manager approval policy. The Helm chart defaults
 `global.certificate.useCertManager` to `false`; enabling it renders these settings
-using the API namespace, with `nico-api.machineCertificates.issuerRef` defaulting
+using the API namespace (default `forge-system`, overridden by
+`nico-api.namespaceOverride`), with `nico-api.machineCertificates.issuerRef` defaulting
 to `ClusterIssuer/site-issuer`. These chart values can be overridden. A custom
 `configFiles.nicoApiConfig` replaces the chart's generated configuration; the
 site configuration is merged over the global configuration, followed by the
 binary's environment overrides.
-When enabling the provider through a custom or site configuration file, also
-enable the Helm switch to grant the request permissions.
+The API chart grants the request permissions regardless of the Helm switch, so
+enabling the provider in the site configuration requires no Helm flag change.
 
 For each machine or UFM certificate, the API generates a P-256 key in memory and
 submits only a CSR. The SPIFFE URI is always included using

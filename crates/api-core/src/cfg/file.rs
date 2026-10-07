@@ -1122,7 +1122,7 @@ pub struct CertificatesConfig {
     #[serde(default)]
     pub use_cert_manager: bool,
 
-    /// Required when `use_cert_manager` is true; ignored otherwise.
+    /// Optional overrides for the cert-manager defaults; ignored when disabled.
     /// The signer must chain to the existing `[tls] root_cafile_path` bundle.
     #[serde(default)]
     pub cert_manager: Option<cert_manager::Config>,
@@ -1304,14 +1304,12 @@ impl std::fmt::Debug for DedicatedVaultSettings {
 
 impl CertificatesConfig {
     /// Return and validate the signer settings when cert-manager is enabled.
-    /// Disabled settings are ignored; enabling it without its section is an error.
-    pub fn cert_manager_config(&self) -> eyre::Result<Option<&cert_manager::Config>> {
+    /// Disabled settings are ignored; an omitted section uses the signer defaults.
+    pub fn cert_manager_config(&self) -> eyre::Result<Option<cert_manager::Config>> {
         if !self.use_cert_manager {
             return Ok(None);
         }
-        let config = self.cert_manager.as_ref().ok_or_else(|| {
-            eyre::eyre!("certificates.use_cert_manager requires [certificates.cert_manager]")
-        })?;
+        let config = self.cert_manager.clone().unwrap_or_default();
         config.validate()?;
         Ok(Some(config))
     }
@@ -5575,18 +5573,18 @@ path = "credentials.yaml"
         let cases = [
             ("default off", "", Ok(false)),
             (
-                "enabled without signer",
+                "enabled with only the flag",
                 "use_cert_manager = true",
-                Err("requires"),
+                Ok(true),
             ),
             (
                 "signer defaults",
-                "use_cert_manager = true\n[cert_manager]\nnamespace = 'nico-system'\nissuer_name = 'site-issuer'",
+                "use_cert_manager = true\n[cert_manager]",
                 Ok(true),
             ),
             (
                 "timeout too large",
-                "use_cert_manager = true\n[cert_manager]\nnamespace = 'nico-system'\nissuer_name = 'site-issuer'\nrequest_timeout_secs = 601",
+                "use_cert_manager = true\n[cert_manager]\nnamespace = 'forge-system'\nissuer_name = 'site-issuer'\nrequest_timeout_secs = 601",
                 Err("1..=600"),
             ),
         ];
@@ -5597,6 +5595,8 @@ path = "credentials.yaml"
                 (Ok(settings), Ok(enabled)) => {
                     assert_eq!(settings.is_some(), enabled, "{name}");
                     if let Some(settings) = settings {
+                        assert_eq!(settings.namespace, "forge-system", "{name}");
+                        assert_eq!(settings.issuer_name, "site-issuer", "{name}");
                         assert_eq!(settings.request_timeout_secs, 120, "{name}");
                         assert_eq!(
                             settings.max_ttl,

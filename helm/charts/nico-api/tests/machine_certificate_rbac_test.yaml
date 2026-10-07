@@ -2,15 +2,18 @@ suite: Machine certificate request permissions
 templates:
   - rbac.yaml
 tests:
-  - it: retains the existing permission when disabled
+  - it: permits site-config-only enablement with the default namespace
     documentIndex: 0
     asserts:
+      - equal:
+          path: metadata.namespace
+          value: forge-system
       - equal:
           path: rules
           value:
             - apiGroups: ["cert-manager.io"]
               resources: ["certificaterequests"]
-              verbs: ["create"]
+              verbs: ["create", "get", "delete"]
 
   - it: permits request submission observation and cleanup in the API namespace
     documentIndex: 0

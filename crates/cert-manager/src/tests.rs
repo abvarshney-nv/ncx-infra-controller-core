@@ -18,12 +18,12 @@ use super::*;
 use crate::resources::RequestCondition;
 
 const MACHINE_ID: &str = "fm100xtest";
-const SPIFFE: &str = "spiffe://nico.local/nico-system/machine/fm100xtest";
+const SPIFFE: &str = "spiffe://nico.local/forge-system/machine/fm100xtest";
 
 fn spiffe_identity() -> SpiffeIdentity {
     SpiffeIdentity {
         trust_domain: "nico.local".into(),
-        machine_base_path: "/nico-system/machine/".into(),
+        machine_base_path: "/forge-system/machine/".into(),
     }
 }
 
@@ -100,7 +100,7 @@ fn mock_client(ca: Arc<TestCa>, behavior: Behavior, recorded: Arc<Mutex<Recorded
                     let mut resource: CertificateRequest = serde_json::from_slice(&body).unwrap();
                     resource.metadata.uid = Some("test-uid".into());
                     let expected =
-                        "/apis/cert-manager.io/v1/namespaces/nico-system/certificaterequests";
+                        "/apis/cert-manager.io/v1/namespaces/forge-system/certificaterequests";
                     assert_eq!(parts.uri.path(), expected);
                     recorded.lock().unwrap().created = Some(resource.clone());
                     if matches!(behavior, Behavior::CreateFailure) {
@@ -173,7 +173,7 @@ fn mock_client(ca: Arc<TestCa>, behavior: Behavior, recorded: Arc<Mutex<Recorded
             )
         }
     });
-    Client::new(service, "nico-system")
+    Client::new(service, "forge-system")
 }
 
 /// Exercises the provider through the Kubernetes wire contract and the public trait.
@@ -211,7 +211,7 @@ async fn issuance_and_cleanup_contract() {
         let provider = CertManagerCertificateProvider::new(
             mock_client(ca.clone(), behavior, recorded.clone()),
             Config {
-                namespace: "nico-system".into(),
+                namespace: "forge-system".into(),
                 issuer_name: "site-issuer".into(),
                 issuer_kind: IssuerKind::ClusterIssuer,
                 request_timeout_secs: 1,
@@ -334,7 +334,7 @@ fn rejects_incompatible_issued_material() {
     )
     .unwrap();
     wrong_identity_csr.params.subject_alt_names = vec![rcgen::SanType::URI(
-        "spiffe://nico.local/nico-system/machine/other"
+        "spiffe://nico.local/forge-system/machine/other"
             .try_into()
             .unwrap(),
     )];
@@ -386,7 +386,7 @@ async fn ufm_issuance_contract() {
     let provider = CertManagerCertificateProvider::new(
         mock_client(ca.clone(), Behavior::Issued, recorded.clone()),
         Config {
-            namespace: "nico-system".into(),
+            namespace: "forge-system".into(),
             issuer_name: "site-issuer".into(),
             issuer_kind: IssuerKind::ClusterIssuer,
             request_timeout_secs: 1,
@@ -428,7 +428,7 @@ async fn ufm_issuance_contract() {
         csr.params.subject_alt_names,
         vec![
             rcgen::SanType::URI(
-                "spiffe://nico.local/nico-system/machine/fabric-a"
+                "spiffe://nico.local/forge-system/machine/fabric-a"
                     .try_into()
                     .unwrap()
             ),

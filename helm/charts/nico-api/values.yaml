@@ -31,8 +31,8 @@ global:
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/part-of: site-controller
 
-## Override the release namespace (defaults to helm install -n <namespace>)
-namespaceOverride: ""
+## API namespace. Set an empty string to use the Helm release namespace.
+namespaceOverride: forge-system
 
 ## Used when global.certificate.useCertManager is true. Requests are created
 ## in the API namespace using its service account. The issuer must chain to
