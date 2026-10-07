@@ -1,0 +1,29 @@
+suite: Machine certificate request permissions
+templates:
+  - rbac.yaml
+tests:
+  - it: retains the existing permission when disabled
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: rules
+          value:
+            - apiGroups: ["cert-manager.io"]
+              resources: ["certificaterequests"]
+              verbs: ["create"]
+
+  - it: permits request submission observation and cleanup in the API namespace
+    documentIndex: 0
+    set:
+      global.certificate.useCertManager: true
+      namespaceOverride: test-site
+    asserts:
+      - equal:
+          path: metadata.namespace
+          value: test-site
+      - equal:
+          path: rules
+          value:
+            - apiGroups: ["cert-manager.io"]
+              resources: ["certificaterequests"]
+              verbs: ["create", "get", "delete"]

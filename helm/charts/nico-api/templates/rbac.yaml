@@ -8,7 +8,11 @@ metadata:
 rules:
   - apiGroups: ["cert-manager.io"]
     resources: ["certificaterequests"]
+    {{- if .Values.global.certificate.useCertManager }}
+    verbs: ["create", "get", "delete"]
+    {{- else }}
     verbs: ["create"]
+    {{- end }}
 ---
 kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1

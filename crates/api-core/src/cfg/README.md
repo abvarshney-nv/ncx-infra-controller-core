@@ -1679,8 +1679,61 @@ Each entry in `providers` is tagged by `type`. Unknown fields are rejected.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `backend` | `CertBackendKind` | `shared_vault` | Which backend issues certificates: `shared_vault` reuses the credential store's Vault client (one client, one token lease), `dedicated_vault` uses a separately-configured Vault. |
-| `dedicated_vault` | `Option<DedicatedVaultSettings>` | — | Connection settings for a dedicated certificate Vault (see [DedicatedVaultSettings](#dedicatedvaultsettings)). Required when `backend = "dedicated_vault"`, ignored otherwise. |
+| `use_cert_manager` | `bool` | `false` | Issue and renew Scout, DPU, and UFM certificates using cert-manager. Requires `cert_manager` and `[tls] root_cafile_path`. Disabled settings are ignored. |
+| `cert_manager` | `Option<cert_manager::Config>` | — | Kubernetes signer settings, required when `use_cert_manager = true`; see [machine cert-manager settings](#machine-cert-manager-settings). |
+| `backend` | `CertBackendKind` | `shared_vault` | Vault backend when `use_cert_manager = false`: `shared_vault` reuses the credential store's Vault client (one client, one token lease), `dedicated_vault` uses a separately-configured Vault. Ignored when cert-manager is enabled. |
+| `dedicated_vault` | `Option<DedicatedVaultSettings>` | — | Connection settings for a dedicated certificate Vault (see [DedicatedVaultSettings](#dedicatedvaultsettings)). Required when `backend = "dedicated_vault"` and `use_cert_manager = false`, ignored otherwise. |
+
+### Machine cert-manager settings
+
+These fields live under `[certificates.cert_manager]`.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `namespace` | `String` | **required, non-empty** | Namespace for CertificateRequests. The API service account needs `create`, `get`, and `delete` on `certificaterequests` in this namespace. |
+| `issuer_name` | `String` | **required, non-empty** | Existing issuer in `cert-manager.io`, chaining to the same site CA trusted by the API, Scout, and DPU agents. |
+| `issuer_kind` | `IssuerKind` | `ClusterIssuer` | Accepts `ClusterIssuer` or `Issuer`; an `Issuer` must be in `namespace`. |
+| `request_timeout_secs` | `u64` | `120` | Issuance deadline including Kubernetes creation, in seconds; accepts `1` through `600`. |
+| `max_ttl` | `Duration` | `720h` | Positive whole-second duration in human-readable format (for example `720h`). Caps machine and explicit UFM lifetimes; set it to the existing Vault PKI role's maximum when migrating. |
+
+The API uses Kubernetes client configuration (in-cluster service account or
+kubeconfig). Its issuer must be ready and its CertificateRequests must be
+approved by the cluster's cert-manager approval policy. The Helm chart defaults
+`global.certificate.useCertManager` to `false`; enabling it renders these settings
+using the API namespace, with `nico-api.machineCertificates.issuerRef` defaulting
+to `ClusterIssuer/site-issuer`. These chart values can be overridden. A custom
+`configFiles.nicoApiConfig` replaces the chart's generated configuration; the
+site configuration is merged over the global configuration, followed by the
+binary's environment overrides.
+When enabling the provider through a custom or site configuration file, also
+enable the Helm switch to grant the request permissions.
+
+For each machine or UFM certificate, the API generates a P-256 key in memory and
+submits only a CSR. The SPIFFE URI is always included using
+`spiffe_trust_domain` and `spiffe_machine_base_path`; it has no separate feature
+flag. Node bearer-token authentication settings do not control this SAN.
+Machine lifetimes retain the randomized Vault default of 432 through 719 hours,
+capped by `max_ttl`. UFM requests include their existing DNS SANs and an explicit
+365-day lifetime, also capped by `max_ttl`. Explicit TTLs must be positive
+whole-second durations; DNS SANs are comma-separated, with whitespace trimmed.
+UFM's manual installation handoff stages the private key in the API pod with
+mode `0600`, including on repeat issuance. Copy it as the file owner or root.
+The API
+validates the returned key, SPIFFE identity, usages, lifetime, and trust chain
+against `[tls] root_cafile_path`, then returns the existing certificate/key/CA
+response format. The signing issuer must preserve the requested machine usages
+and provide its CA bundle.
+
+After success, failure, or timeout, the API submits a deletion request and waits
+only for Kubernetes' acknowledgement, without waiting for finalizers. Failure
+logs a warning without discarding a successfully issued certificate.
+Cancellation or process death may leave a public CSR for
+operator cleanup. Requests have UUID names and the `nico.nvidia.com/machine-id`
+label for filtering by machine; UFM requests instead use the
+`nico.nvidia.com/fabric` label. Issuance failures are returned to the caller;
+they do not fall back to Vault. Provider selection does not change service
+transport Certificate resources, Secrets, or mounts. Vault credential and KMS
+backends remain independently configured.
 
 ### `DedicatedVaultSettings`
 
