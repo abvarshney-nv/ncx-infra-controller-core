@@ -106,9 +106,10 @@ impl Config {
             ));
         }
         if self.max_ttl < MIN_CERTIFICATE_TTL || self.max_ttl.subsec_nanos() != 0 {
-            return Err(Error::Configuration(
-                "max_ttl must be a whole-second duration greater than 7d".into(),
-            ));
+            return Err(Error::Configuration(format!(
+                "max_ttl must be a whole-second duration of at least {}",
+                humantime::format_duration(MIN_CERTIFICATE_TTL),
+            )));
         }
         Ok(())
     }

@@ -73,9 +73,10 @@ impl CertificateRequestMaterial {
                 Error::InvalidArgument(format!("invalid certificate TTL: {error}"))
             })?;
             if ttl < MIN_CERTIFICATE_TTL || ttl.subsec_nanos() != 0 {
-                return Err(Error::InvalidArgument(
-                    "certificate TTL must be a whole-second duration greater than 7d".into(),
-                ));
+                return Err(Error::InvalidArgument(format!(
+                    "certificate TTL must be a whole-second duration of at least {}",
+                    humantime::format_duration(MIN_CERTIFICATE_TTL),
+                )));
             }
             ttl
         } else {
@@ -196,9 +197,10 @@ impl CertificateRequestMaterial {
         if cert.validity().not_after.timestamp()
             < (now.as_secs() + MIN_CERTIFICATE_TTL.as_secs()) as i64
         {
-            return Err(Error::Certificate(
-                "certificate must remain valid for more than 7d".into(),
-            ));
+            return Err(Error::Certificate(format!(
+                "certificate must remain valid for at least {}",
+                humantime::format_duration(MIN_CERTIFICATE_TTL),
+            )));
         }
         let intermediates: Vec<_> = chain.iter().skip(1).chain(&ca_chain).cloned().collect();
         verifier(trust_bundle)?
