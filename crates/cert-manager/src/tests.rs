@@ -70,6 +70,53 @@ fn condition(type_: &str, status: &str, reason: &str) -> RequestCondition {
     }
 }
 
+#[test]
+fn configured_lifetime_outlasts_agent_renewal() {
+    use carbide_test_support::Outcome::{Fails, Yields};
+    use carbide_test_support::scenarios;
+
+    scenarios!(run = |max_ttl| Config { max_ttl, ..Config::default() }
+        .validate()
+        .map_err(|error| assert!(matches!(error, Error::Configuration(_)), "{error}"));
+        "must outlast the seven-day renewal interval" {
+            MIN_CERTIFICATE_TTL - Duration::from_secs(1) => Fails,
+            MIN_CERTIFICATE_TTL => Yields(()),
+        }
+        "fractional seconds are unsupported" {
+            MIN_CERTIFICATE_TTL + Duration::from_millis(1) => Fails,
+        }
+    );
+}
+
+#[test]
+fn certificate_request_argument_contract() {
+    use carbide_test_support::Outcome::{Fails, Yields};
+    use carbide_test_support::scenarios;
+
+    scenarios!(run = |(identifier, dns_names, ttl)| CertificateRequestMaterial::new(
+        &spiffe_identity(), identifier, dns_names, ttl, default_max_ttl(),
+    )
+    .map(|request| request.lifetime)
+    .map_err(|error| assert!(matches!(error, Error::InvalidArgument(_)), "{error}"));
+        "invalid identifier" {
+            ("invalid/id", None, None) => Fails,
+        }
+        "invalid DNS SAN" {
+            (MACHINE_ID, Some("not a DNS name"), None) => Fails,
+        }
+        "malformed TTL" {
+            (MACHINE_ID, None, Some("soon")) => Fails,
+        }
+        "must outlast the seven-day renewal interval" {
+            (MACHINE_ID, None, Some("7d")) => Fails,
+            (MACHINE_ID, None, Some("604801s")) => Yields(MIN_CERTIFICATE_TTL),
+        }
+        "fractional seconds are unsupported" {
+            (MACHINE_ID, None, Some("7d 1s 1ms")) => Fails,
+        }
+    );
+}
+
 #[derive(Clone, Copy)]
 enum Behavior {
     Issued,
@@ -365,12 +412,21 @@ fn rejects_incompatible_issued_material() {
         &request.csr_pem().unwrap(),
         request.lifetime + Duration::from_secs(3600),
     );
+    let too_short = ca.sign(
+        &request.csr_pem().unwrap(),
+        MIN_CERTIFICATE_TTL - Duration::from_secs(1),
+    );
     for (name, certificate, trust) in [
         ("different key", &wrong_key, ca.pem.as_bytes()),
         ("different identity", &wrong_identity, ca.pem.as_bytes()),
         ("missing usages", &missing_usage, ca.pem.as_bytes()),
         ("different CA", &valid, other_ca.pem.as_bytes()),
         ("extended lifetime", &too_long, ca.pem.as_bytes()),
+        (
+            "expires before the renewal interval ends",
+            &too_short,
+            ca.pem.as_bytes(),
+        ),
     ] {
         assert!(request.validate(certificate, trust).is_err(), "{name}");
     }

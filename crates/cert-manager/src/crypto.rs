@@ -16,8 +16,8 @@ use rustls::server::danger::ClientCertVerifier;
 use rustls_pki_types::{CertificateDer, UnixTime};
 use x509_parser::prelude::{FromDer, GeneralName, X509Certificate};
 
-use crate::Error;
 use crate::resources::RequestStatus;
+use crate::{Error, MIN_CERTIFICATE_TTL};
 
 pub(crate) struct CertificateRequestMaterial {
     key: KeyPair,
@@ -36,19 +36,19 @@ impl CertificateRequestMaterial {
         max_ttl: Duration,
     ) -> Result<Self, Error> {
         if identifier.is_empty() || identifier.contains(['/', '?', '#']) {
-            return Err(Error::Configuration(
+            return Err(Error::InvalidArgument(
                 "certificate identifier must be a non-empty SPIFFE path segment".into(),
             ));
         }
         let spiffe_uri =
             machine_spiffe_uri(&spiffe.trust_domain, &spiffe.machine_base_path, identifier);
         carbide_authn::spiffe_id::SpiffeId::new(&spiffe_uri)
-            .map_err(|error| Error::Configuration(error.to_string()))?;
+            .map_err(|error| Error::InvalidArgument(error.to_string()))?;
         let mut params = CertificateParams::default();
         params.distinguished_name = DistinguishedName::new();
         params.subject_alt_names =
             vec![SanType::URI(spiffe_uri.clone().try_into().map_err(
-                |_| Error::Configuration("SPIFFE URI must be ASCII".into()),
+                |_| Error::InvalidArgument("SPIFFE URI must be ASCII".into()),
             )?)];
         let dns_names: Vec<String> = alt_names.map_or_else(Vec::new, |names| {
             names
@@ -60,21 +60,21 @@ impl CertificateRequestMaterial {
             params.subject_alt_names.push(SanType::DnsName(
                 name.clone()
                     .try_into()
-                    .map_err(|_| Error::Configuration("DNS SAN must be ASCII".into()))?,
+                    .map_err(|_| Error::InvalidArgument("DNS SAN must be ASCII".into()))?,
             ));
             if name.is_empty() {
-                return Err(Error::Configuration("DNS SAN must be non-empty".into()));
+                return Err(Error::InvalidArgument("DNS SAN must be non-empty".into()));
             }
             rustls_pki_types::ServerName::try_from(name.as_str())
-                .map_err(|_| Error::Configuration(format!("invalid DNS SAN: {name}")))?;
+                .map_err(|_| Error::InvalidArgument(format!("invalid DNS SAN: {name}")))?;
         }
         let lifetime = if let Some(ttl) = ttl {
             let ttl = humantime::parse_duration(ttl).map_err(|error| {
-                Error::Configuration(format!("invalid certificate TTL: {error}"))
+                Error::InvalidArgument(format!("invalid certificate TTL: {error}"))
             })?;
-            if ttl.is_zero() || ttl.subsec_nanos() != 0 {
-                return Err(Error::Configuration(
-                    "certificate TTL must be a positive whole-second duration".into(),
+            if ttl < MIN_CERTIFICATE_TTL || ttl.subsec_nanos() != 0 {
+                return Err(Error::InvalidArgument(
+                    "certificate TTL must be a whole-second duration greater than 7d".into(),
                 ));
             }
             ttl
@@ -191,6 +191,13 @@ impl CertificateRequestMaterial {
         {
             return Err(Error::Certificate(
                 "certificate exceeds the requested lifetime".into(),
+            ));
+        }
+        if cert.validity().not_after.timestamp()
+            < (now.as_secs() + MIN_CERTIFICATE_TTL.as_secs()) as i64
+        {
+            return Err(Error::Certificate(
+                "certificate must remain valid for more than 7d".into(),
             ));
         }
         let intermediates: Vec<_> = chain.iter().skip(1).chain(&ca_chain).cloned().collect();

@@ -25,6 +25,8 @@ use crate::resources::{CertificateRequest, IssuerRef, RequestSpec, RequestStatus
 const MACHINE_ID_LABEL: &str = "nico.nvidia.com/machine-id";
 const FABRIC_LABEL: &str = "nico.nvidia.com/fabric";
 const POLL_INTERVAL: Duration = Duration::from_secs(1);
+// Agents in carbide-certs::cert_renewal can wait seven days before renewing.
+const MIN_CERTIFICATE_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60 + 1);
 
 /// Supported cert-manager issuer scopes, serialized with Kubernetes spelling.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
@@ -55,7 +57,8 @@ pub struct Config {
     #[serde(default = "default_request_timeout_secs")]
     pub request_timeout_secs: u64,
     /// Maximum certificate lifetime; defaults to 720h, matching the bootstrap Vault role.
-    /// Must be a positive whole-second duration. Set to the existing Vault role limit when migrating.
+    /// Must be a whole-second duration greater than 7d to outlast the agent renewal interval.
+    /// Set to the existing Vault role limit when migrating.
     #[serde(default = "default_max_ttl", with = "humantime_serde")]
     pub max_ttl: Duration,
 }
@@ -89,7 +92,8 @@ impl Default for Config {
 }
 
 impl Config {
-    /// Reject empty namespace/issuer and deadlines outside 1..=600 seconds.
+    /// Reject empty namespace/issuer, deadlines outside 1..=600 seconds, and
+    /// lifetimes that are fractional seconds or no greater than seven days.
     pub fn validate(&self) -> Result<(), Error> {
         if self.namespace.trim().is_empty() || self.issuer_name.trim().is_empty() {
             return Err(Error::Configuration(
@@ -101,9 +105,9 @@ impl Config {
                 "request_timeout_secs must be in 1..=600".into(),
             ));
         }
-        if self.max_ttl.is_zero() || self.max_ttl.subsec_nanos() != 0 {
+        if self.max_ttl < MIN_CERTIFICATE_TTL || self.max_ttl.subsec_nanos() != 0 {
             return Err(Error::Configuration(
-                "max_ttl must be a positive whole-second duration".into(),
+                "max_ttl must be a whole-second duration greater than 7d".into(),
             ));
         }
         Ok(())
@@ -113,9 +117,12 @@ impl Config {
 /// Certificate issuance or validation failure, retaining Kubernetes and cryptographic sources.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    /// Invalid provider configuration or certificate request arguments.
+    /// Invalid provider configuration.
     #[error("invalid cert-manager configuration: {0}")]
     Configuration(String),
+    /// Invalid certificate request identifier, DNS SAN, or TTL.
+    #[error("invalid cert-manager request argument: {0}")]
+    InvalidArgument(String),
     /// Kubernetes request failure.
     #[error("cert-manager kubernetes request failed: {0}")]
     Kubernetes(#[from] kube::Error),
@@ -151,6 +158,7 @@ pub enum Error {
 /// may leave a public CSR behind for operator cleanup.
 /// UFM DNS SANs are included in the CSR. Explicit TTLs are capped by `Config::max_ttl`;
 /// absent TTLs retain the randomized machine lifetime, subject to the same cap.
+/// Requested and issued certificates must remain valid for more than seven days.
 pub struct CertManagerCertificateProvider {
     requests: Api<CertificateRequest>,
     config: Config,
