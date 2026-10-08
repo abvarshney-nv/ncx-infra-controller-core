@@ -78,7 +78,7 @@ fn configured_lifetime_outlasts_agent_renewal() {
     scenarios!(run = |max_ttl| Config { max_ttl, ..Config::default() }
         .validate()
         .map_err(|error| assert!(matches!(error, Error::Configuration(_)), "{error}"));
-        "must outlast the seven-day renewal interval" {
+        "must include the renewal grace period" {
             MIN_CERTIFICATE_TTL - Duration::from_secs(1) => Fails,
             MIN_CERTIFICATE_TTL => Yields(()),
         }
@@ -92,6 +92,12 @@ fn configured_lifetime_outlasts_agent_renewal() {
 fn certificate_request_argument_contract() {
     use carbide_test_support::Outcome::{Fails, Yields};
     use carbide_test_support::scenarios;
+
+    let below_minimum =
+        humantime::format_duration(MIN_CERTIFICATE_TTL - Duration::from_secs(1)).to_string();
+    let minimum = humantime::format_duration(MIN_CERTIFICATE_TTL).to_string();
+    let fractional =
+        humantime::format_duration(MIN_CERTIFICATE_TTL + Duration::from_millis(1)).to_string();
 
     scenarios!(run = |(identifier, dns_names, ttl)| CertificateRequestMaterial::new(
         &spiffe_identity(), identifier, dns_names, ttl, default_max_ttl(),
@@ -107,12 +113,12 @@ fn certificate_request_argument_contract() {
         "malformed TTL" {
             (MACHINE_ID, None, Some("soon")) => Fails,
         }
-        "must outlast the seven-day renewal interval" {
-            (MACHINE_ID, None, Some("7d")) => Fails,
-            (MACHINE_ID, None, Some("604801s")) => Yields(MIN_CERTIFICATE_TTL),
+        "must include the renewal grace period" {
+            (MACHINE_ID, None, Some(below_minimum.as_str())) => Fails,
+            (MACHINE_ID, None, Some(minimum.as_str())) => Yields(MIN_CERTIFICATE_TTL),
         }
         "fractional seconds are unsupported" {
-            (MACHINE_ID, None, Some("7d 1s 1ms")) => Fails,
+            (MACHINE_ID, None, Some(fractional.as_str())) => Fails,
         }
     );
 }

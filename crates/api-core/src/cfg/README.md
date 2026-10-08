@@ -1701,7 +1701,7 @@ use_cert_manager = true
 | `issuer_name` | `String` | `site-issuer` | Non-empty name of an existing issuer in `cert-manager.io`, chaining to the same site CA trusted by the API, Scout, and DPU agents. |
 | `issuer_kind` | `IssuerKind` | `ClusterIssuer` | Accepts `ClusterIssuer` or `Issuer`; an `Issuer` must be in `namespace`. |
 | `request_timeout_secs` | `u64` | `120` | Issuance deadline including Kubernetes creation, in seconds; accepts `1` through `600`. Cleanup has a separate wait bounded by the same duration. |
-| `max_ttl` | `Duration` | `720h` | Whole-second duration greater than `7d` in human-readable format (for example `720h`). Caps machine and explicit UFM lifetimes; set it to the existing Vault PKI role's maximum when migrating. |
+| `max_ttl` | `Duration` | `720h` | Whole-second duration of at least the maximum agent renewal interval plus one day of grace (`8d` with the seven-day renewal maximum), in human-readable format (for example `720h`). Caps machine and explicit UFM lifetimes; set it to the existing Vault PKI role's maximum when migrating. |
 
 The API uses Kubernetes client configuration (in-cluster service account or
 kubeconfig). Its issuer must be ready and its CertificateRequests must be
@@ -1726,8 +1726,9 @@ flag. Node bearer-token authentication settings do not control this SAN.
 Machine lifetimes retain the randomized Vault default of 432 through 719 hours,
 capped by `max_ttl`. UFM requests include their existing DNS SANs and an explicit
 365-day lifetime, also capped by `max_ttl`. Explicit TTLs must be whole-second
-durations greater than `7d`; DNS SANs are comma-separated, with whitespace trimmed.
-The lifetime bound exceeds the agents' renewal interval of five to seven days.
+durations meeting the same minimum as `max_ttl`; DNS SANs are comma-separated,
+with whitespace trimmed. The lifetime bound includes one day beyond the maximum
+agent renewal interval to allow for polling delays and retries.
 The API
 validates the returned key, SPIFFE identity, usages, lifetime, and trust chain
 against `[tls] root_cafile_path`, then returns the existing certificate/key/CA
@@ -1735,7 +1736,7 @@ response format. The signing issuer must preserve the requested machine usages
 and provide any intermediate certificates needed to verify the leaf against the
 configured trust bundle. The issuer CA field is optional; when absent, the
 returned issuing-CA bytes are empty and trust verification is still required.
-Certificates with no more than seven days of remaining validity are rejected,
+Certificates with less than the minimum lifetime remaining are rejected,
 including when an issuer shortens the requested lifetime.
 
 After success, failure, or timeout, the API submits a deletion request and waits

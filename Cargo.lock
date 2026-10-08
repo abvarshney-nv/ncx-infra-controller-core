@@ -3821,6 +3821,7 @@ dependencies = [
  "carbide-authn",
  "carbide-secrets",
  "carbide-test-support",
+ "carbide-tls",
  "eyre",
  "http",
  "http-body-util",

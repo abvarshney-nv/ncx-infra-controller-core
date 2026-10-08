@@ -11,6 +11,7 @@ repository.workspace = true
 async-trait = { workspace = true }
 carbide-authn = { path = "../authn" }
 carbide-secrets = { path = "../secrets" }
+carbide-tls = { path = "../tls" }
 eyre = { workspace = true }
 humantime = { workspace = true }
 humantime-serde = { workspace = true }

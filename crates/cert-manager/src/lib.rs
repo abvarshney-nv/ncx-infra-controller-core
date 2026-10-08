@@ -14,6 +14,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use carbide_secrets::certificates::{Certificate, CertificateProvider};
 use carbide_secrets::{SecretsError, SpiffeIdentity};
+use forge_tls::client_config::MAX_CERT_RENEWAL_TIME_SECS;
 use kube::api::{DeleteParams, PostParams};
 use kube::{Api, Client};
 use serde::{Deserialize, Serialize};
@@ -25,8 +26,10 @@ use crate::resources::{CertificateRequest, IssuerRef, RequestSpec, RequestStatus
 const MACHINE_ID_LABEL: &str = "nico.nvidia.com/machine-id";
 const FABRIC_LABEL: &str = "nico.nvidia.com/fabric";
 const POLL_INTERVAL: Duration = Duration::from_secs(1);
-// Agents in carbide-certs::cert_renewal can wait seven days before renewing.
-const MIN_CERTIFICATE_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60 + 1);
+// Leave a day after the latest scheduled renewal for loop delays and retries.
+const CERT_RENEWAL_GRACE_PERIOD_SECS: u64 = 24 * 60 * 60;
+const MIN_CERTIFICATE_TTL: Duration =
+    Duration::from_secs(MAX_CERT_RENEWAL_TIME_SECS + CERT_RENEWAL_GRACE_PERIOD_SECS);
 
 /// Supported cert-manager issuer scopes, serialized with Kubernetes spelling.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
@@ -57,7 +60,8 @@ pub struct Config {
     #[serde(default = "default_request_timeout_secs")]
     pub request_timeout_secs: u64,
     /// Maximum certificate lifetime; defaults to 720h, matching the bootstrap Vault role.
-    /// Must be a whole-second duration greater than 7d to outlast the agent renewal interval.
+    /// Must be a whole-second duration of at least the maximum agent renewal interval
+    /// plus one day of grace for polling delays and retries (8d with the current interval).
     /// Set to the existing Vault role limit when migrating.
     #[serde(default = "default_max_ttl", with = "humantime_serde")]
     pub max_ttl: Duration,
@@ -93,7 +97,8 @@ impl Default for Config {
 
 impl Config {
     /// Reject empty namespace/issuer, deadlines outside 1..=600 seconds, and
-    /// lifetimes that are fractional seconds or no greater than seven days.
+    /// lifetimes that are fractional seconds or leave less than a day after the
+    /// maximum agent renewal interval.
     pub fn validate(&self) -> Result<(), Error> {
         if self.namespace.trim().is_empty() || self.issuer_name.trim().is_empty() {
             return Err(Error::Configuration(
@@ -159,7 +164,8 @@ pub enum Error {
 /// may leave a public CSR behind for operator cleanup.
 /// UFM DNS SANs are included in the CSR. Explicit TTLs are capped by `Config::max_ttl`;
 /// absent TTLs retain the randomized machine lifetime, subject to the same cap.
-/// Requested and issued certificates must remain valid for more than seven days.
+/// Requested and issued certificates must remain valid for at least the maximum
+/// agent renewal interval plus one day of grace for polling delays and retries.
 pub struct CertManagerCertificateProvider {
     requests: Api<CertificateRequest>,
     config: Config,
