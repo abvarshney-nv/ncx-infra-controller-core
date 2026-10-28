@@ -20,9 +20,8 @@ use crate::sdk::NoLabels;
 use crate::types::DpuDeviceInfo;
 
 const NS: &str = "test-ns";
-const DEVICE: &str = "dpu-1";
-const DEVICE_PATH: &str =
-    "/apis/provisioning.dpu.nvidia.com/v1alpha1/namespaces/test-ns/dpudevices/device-dpu-1";
+const DEVICE: &str = "01-02-03-04-05-06";
+const DEVICE_PATH: &str = "/apis/provisioning.dpu.nvidia.com/v1alpha1/namespaces/test-ns/dpudevices/device-01-02-03-04-05-06";
 type ApiHandle = mock::Handle<Request<Body>, Response<Body>>;
 
 fn fixture() -> (DpfSdk<KubeRepository>, ApiHandle) {
@@ -92,7 +91,7 @@ fn secret(revision: u32, password: &str) -> Value {
             resource_version: Some("9".to_string()),
             labels: Some(BTreeMap::from([(
                 DEVICE_LABEL.to_string(),
-                device_label(DEVICE),
+                DEVICE.to_string(),
             )])),
             finalizers: Some(vec![
                 "provisioning.dpu.nvidia.com/bmc-credential".to_string(),
@@ -118,7 +117,7 @@ fn device(
 ) -> Value {
     json!({
         "apiVersion": "provisioning.dpu.nvidia.com/v1alpha1", "kind": "DPUDevice",
-        "metadata": { "name": "device-dpu-1", "namespace": NS, "uid": "device-uid", "resourceVersion": "17", "generation": 2 },
+        "metadata": { "name": dpu_device_cr_name(DEVICE), "namespace": NS, "uid": "device-uid", "resourceVersion": "17", "generation": 2 },
         "spec": { "serialNumber": "serial-1", "bmcCredentialSecretName": desired },
         "status": {
             "bmcCredentialSecretName": active,
@@ -132,11 +131,11 @@ fn device(
 #[test]
 fn bmc_credential_names_are_stable_and_distinguish_device_and_revision() {
     let name = bmc_credential_secret_name(DEVICE, u32::MAX);
-    assert_eq!(
+    assert_eq!(name, "01-02-03-04-05-06-v4294967295");
+    assert_ne!(
         name,
-        "nico-bmc-a797053305dd92c025cdd2b56a0bb5b0-v4294967295"
+        bmc_credential_secret_name("01-02-03-04-05-07", u32::MAX)
     );
-    assert_ne!(name, bmc_credential_secret_name("dpu-2", u32::MAX));
     assert_ne!(name, bmc_credential_secret_name(DEVICE, 0));
     assert!(name.len() <= 63);
     assert!(
@@ -424,12 +423,11 @@ async fn registration_create_race_checks_the_winning_credential_reference() {
 }
 
 #[tokio::test]
-async fn old_bmc_credential_cleanup_preserves_in_use_foreign_and_replaced_secrets() {
+async fn old_bmc_credential_cleanup_preserves_active_foreign_and_replaced_secrets() {
     for scenario in [
         "delete",
         "not adopted",
         "foreign",
-        "another device references it",
         "replacement conflict",
         "already missing",
     ] {
@@ -448,7 +446,7 @@ async fn old_bmc_credential_cleanup_preserves_in_use_foreign_and_replaced_secret
                 "True",
                 "Success",
             );
-            exchange(&mut handle, "GET", DEVICE_PATH, 200, current.clone()).await;
+            exchange(&mut handle, "GET", DEVICE_PATH, 200, current).await;
             if scenario == "not adopted" {
                 return;
             }
@@ -462,22 +460,6 @@ async fn old_bmc_credential_cleanup_preserves_in_use_foreign_and_replaced_secret
             }
             exchange(&mut handle, "GET", &secret_path(&old_name), 200, old_secret).await;
             if scenario == "foreign" {
-                return;
-            }
-            let mut devices = vec![current];
-            if scenario == "another device references it" {
-                let mut other = device(
-                    Some(&old_name),
-                    None,
-                    "False",
-                    "SharedCredentialSecretNotAllowed",
-                );
-                other["metadata"]["name"] = json!("device-dpu-2");
-                devices.push(other);
-            }
-            exchange(&mut handle, "GET", "/apis/provisioning.dpu.nvidia.com/v1alpha1/namespaces/test-ns/dpudevices", 200,
-                json!({"apiVersion": "provisioning.dpu.nvidia.com/v1alpha1", "kind": "DPUDeviceList", "metadata": {}, "items": devices})).await;
-            if scenario == "another device references it" {
                 return;
             }
             let conflict = scenario == "replacement conflict";

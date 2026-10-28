@@ -9,7 +9,6 @@ use k8s_openapi::ByteString;
 use k8s_openapi::api::core::v1::Secret;
 use kube::core::ObjectMeta;
 use serde_json::json;
-use sha2::{Digest, Sha256};
 
 use super::{DpfSdk, SECRET_NAME, dpu_device_cr_name};
 use crate::crds::dpudevices_generated::DPUDevice;
@@ -73,14 +72,9 @@ impl BmcCredentialObservation {
     }
 }
 
-fn device_label(device_id: &str) -> String {
-    // Bound both the ownership label and revision-named Secret without exposing the device ID.
-    hex::encode(Sha256::digest(device_id.as_bytes()))[..32].to_string()
-}
-
 /// Stable Kubernetes Secret name for one device and credential revision. No password is encoded.
 pub fn bmc_credential_secret_name(device_id: &str, revision: u32) -> String {
-    format!("nico-bmc-{}-v{revision}", device_label(device_id))
+    format!("{device_id}-v{revision}")
 }
 
 pub(super) fn validate_per_device_secret_name(secret_name: &str) -> Result<(), DpfError> {
@@ -131,7 +125,7 @@ impl<R: BmcCredentialRepository, L> DpfSdk<R, L> {
                         namespace: Some(self.namespace.clone()),
                         labels: Some(BTreeMap::from([(
                             DEVICE_LABEL.to_string(),
-                            device_label(device_id),
+                            device_id.to_string(),
                         )])),
                         ..Default::default()
                     },
@@ -167,7 +161,8 @@ impl<R: BmcCredentialRepository, L> DpfSdk<R, L> {
             .labels
             .as_ref()
             .and_then(|labels| labels.get(DEVICE_LABEL))
-            == Some(&device_label(device_id));
+            .map(String::as_str)
+            == Some(device_id);
         let same_password = secret
             .data
             .as_ref()
@@ -268,9 +263,9 @@ impl<R: DpuDeviceRepository, L> DpfSdk<R, L> {
 
 impl<R: BmcCredentialRepository + DpuDeviceRepository, L> DpfSdk<R, L> {
     /// Request deletion of a NICo-owned old Secret only after confirmed adoption of its replacement.
-    /// Checks ownership and current references before deletion. The caller must serialize lifecycle
-    /// work; this check cannot fence a concurrent DPUDevice writer. UID and resource-version
-    /// preconditions protect Secret replacements, and DPF's finalizers remain intact. Missing is success.
+    /// Checks the target DPUDevice's adoption and Secret ownership. The caller must serialize lifecycle
+    /// work. UID and resource-version preconditions protect Secret replacements, and DPF's finalizers
+    /// remain intact. Missing is success.
     pub async fn delete_old_bmc_credential_secret(
         &self,
         device_id: &str,
@@ -304,23 +299,11 @@ impl<R: BmcCredentialRepository + DpuDeviceRepository, L> DpfSdk<R, L> {
             .labels
             .as_ref()
             .and_then(|labels| labels.get(DEVICE_LABEL))
-            != Some(&device_label(device_id))
+            .map(String::as_str)
+            != Some(device_id)
         {
             return Err(DpfError::InvalidState(
                 "BMC credential Secret is not owned by this NICo device".to_string(),
-            ));
-        }
-        let devices = DpuDeviceRepository::list(&*self.repo, &self.namespace).await?;
-        if devices.iter().any(|device| {
-            device.spec.bmc_credential_secret_name.as_deref() == Some(old_secret_name)
-                || device
-                    .status
-                    .as_ref()
-                    .and_then(|status| status.bmc_credential_secret_name.as_deref())
-                    == Some(old_secret_name)
-        }) {
-            return Err(DpfError::InvalidState(
-                "BMC credential Secret is still referenced by a DPUDevice".to_string(),
             ));
         }
         let preconditions = DpfDeletePreconditions {
